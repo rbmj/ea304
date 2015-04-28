@@ -1,5 +1,6 @@
 function[] = project2()
     close all;
+    %% Setup
     % Flight parameters, from the project description
     V_inf = 322.7; %fps
     rho_inf = atmos_rho(8000);
@@ -23,16 +24,16 @@ function[] = project2()
     a0 = linear_a0(a0_r, a0_t, b);
     alpha0 = linear_alpha0(alpha0_r, alpha0_t, root_twist, washout, b);
     c = linear_c(c_r, taper, b);
-    function[a1, cn] = conv_study(num)
-        [coeffs, cn] = glauertAn(alpha, a0, alpha0, c, b, num);
-        a1 = coeffs(1);
-    end
     % Dependent Wing Parameters
     cbar = c_r*(1+taper)/2;
     S = b*cbar;
     AR = b*b/S;
     MAC = (2/3)*c_r*(1+taper+taper^2)/(1+taper);
-    % Convergence Study
+    %% Convergence Study
+    function[a1, cn] = conv_study(num)
+        [coeffs, cn] = glauertAn(alpha, a0, alpha0, c, b, num);
+        a1 = coeffs(1);
+    end
     N = 2:100;
     [A, cn] = arrayfun(@conv_study, N);
     plot(N, A);
@@ -43,6 +44,7 @@ function[] = project2()
     N = find(abs(A - A(end)) < 1e-5);
     N = N(1);
     display(N);
+    %% Study of initial configuration
     % Compute Lift Distribution
     n = (1:N)*2 - 1;
     A = glauertAn(alpha, a0, alpha0, c, b, N);
@@ -94,14 +96,17 @@ function[] = project2()
     display(C_L);
     display(C_Di);
     display(e);
-    display(MP_spanwise(1));
-    display(MY_spanwise(1));
+    MP_root = MP_spanwise(1);
+    MY_root = MY_spanwise(1);
+    display(MP_root);
+    display(MY_root);
     display(C_M);
     q = rho_inf*V_inf*V_inf/2;
     % Total aerodynamic force
     F = q*S*sqrt(C_L^2 + C_Di^2);
-    display(F/4); % Force carried by each bolt, assume uniform loading.
-    % Get some whole aircraft performance characteristics
+    load_per_bolt = F/4; % assume uniform loading
+    display(load_per_bolt);
+    %% Existing Configuration Variable \alpha performance:
     alphav = linspace(-5, 5, 50)*pi/180;
     [clv, cdiv, ev] = arrayfun(@(a) ...
         getCoeffs(AR, glauertAn(a, a0, alpha0, c, b, N), n), alphav);
@@ -117,7 +122,7 @@ function[] = project2()
     figure();
     plot(alphav*180/pi, clv./cdiv);
     title('Effect of \alpha on L/D');
-    % Now do the study for taper ratio
+    %% Taper effects study
     a0_fn = linear_a0(a0_r, a0_t, b);
     alpha0_fn = linear_alpha0(alpha0_r, alpha0_t, root_twist, washout, b);
     lambda_vec = [(2/3) (1/2) (1/3) (1/6)];
@@ -129,10 +134,10 @@ function[] = project2()
     plot(lambda_vec, ev);
     title('e vs \lambda');
     [~, i] = max(ev);
-    lambda = lambda_vec(i);
+    taper = lambda_vec(i);
     c_fn = c_fn{i};
-    display(lambda);
-    % Now do the study for washout
+    display(taper);
+    %% Washout effects study
     a0_fn = linear_a0(a0_r, a0_t, b);
     wash_vec = [1 2.5 5];
     alpha0_fn = arrayfun(@(wash) ...
@@ -146,17 +151,17 @@ function[] = project2()
     [~, i] = max(ev);
     wash = wash_vec(i);
     display(wash);
-    % Now for the design study
-    taper = linspace(0, 1, 50);
+    %% Combined taper/washout
+    lambda = linspace(0, 1, 50);
     washout = linspace(1, 5, 10);
-    values = zeros(numel(washout), numel(taper));
+    values = zeros(numel(washout), numel(lambda));
     alpha0_fn = arrayfun(@(wash) linear_alpha0(alpha0_r, alpha0_t, ...
         root_twist, wash, b), washout, 'UniformOutput', false);
-    c_fn = arrayfun(@(tap) linear_c(c_r, tap, b), taper, ...
+    c_fn = arrayfun(@(tap) linear_c(c_r, tap, b), lambda, ...
         'UniformOutput', false);
     for i = 1:numel(washout)
         alpha0_h = alpha0_fn{i};
-        for j = 1:numel(taper)
+        for j = 1:numel(lambda)
             c_h = c_fn{j};
             % It's OK not to recompute AR here as it's not actually used
             % to compute e, which is all we care about.
@@ -166,12 +171,35 @@ function[] = project2()
         end
     end
     figure();
-    surf(taper, washout, values, 'EdgeColor', 'None', 'FaceColor', 'interp');
+    surf(lambda, washout, values, 'EdgeColor', 'None', 'FaceColor', 'interp');
     view(2);
     colorbar('EastOutside');
     title('e vs. \lambda and washout');
     xlabel('\lambda');
     ylabel('washout (degrees)');
+    %% Study of Proposed Design
+    a0 = linear_a0(a0_r, a0_t, b);
+    alpha0 = linear_alpha0(alpha0_r, alpha0_t, root_twist, wash, b);
+    c = linear_c(c_r, taper, b);
+    A = glauertAn(alpha, a0, alpha0, c, b, N);
+    % Compute coefficients
+    cbar = c_r*(1+taper)/2;
+    S = b*cbar;
+    AR = b*b/S;
+    MAC = (2/3)*c_r*(1+taper+taper^2)/(1+taper);
+    [C_L, C_Di, e] = getCoeffs(AR, A, n);
+    C_M = C_m*MAC/cbar; % C_m is roughly constant so this works
+    % Get spanwise distributions
+    C_l = gamma .* (2./(V_inf*c(y)));
+    figure();
+    plot(y, C_l./C_L);
+    title('Normalized Section Lift Coeff. Distribution');
+    display(C_L);
+    display(C_Di);
+    display(C_M);
+    display(e);
+    display(taper);
+    display(wash);
 end
 
 function[rho] = atmos_rho(h)
